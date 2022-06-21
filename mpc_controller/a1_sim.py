@@ -1,5 +1,8 @@
+import time
 import re
 import numpy as np
+import collections
+
 
 URDF_NAME = "a1/a1.urdf"
 START_POS = [0, 0, 0.32]
@@ -36,6 +39,8 @@ HIP_P_GAIN = 100.0
 HIP_D_GAIN = 2.0
 KNEE_P_GAIN = 100.0
 KNEE_D_GAIN = 2.0
+MAX_TORQUE = 35.5  #N-m
+TORQUE_LIMIT = np.full((12, ), MAX_TORQUE)
 
 _BODY_B_FIELD_NUMBER = 2
 _LINK_A_FIELD_NUMBER = 3
@@ -107,6 +112,7 @@ class A1MotorModel(object):
 
   """
 
+
   def __init__(self,
                kp,
                kd,
@@ -122,6 +128,9 @@ class A1MotorModel(object):
         self._torque_limits = np.full(NUM_MOTORS, torque_limits)
     self._motor_control_mode = motor_control_mode
     self._strength_ratios = np.full(NUM_MOTORS, 1)
+    # print('-----------------------------')
+    # print(self._motor_control_mode )
+    # input()
 
   def set_strength_ratios(self, ratios):
     """Set the strength of each motors relative to the default value.
@@ -181,9 +190,10 @@ class A1MotorModel(object):
       actual_torque: The torque that needs to be applied to the motor.
       observed_torque: The torque observed by the sensor.
     """
+    
     del true_motor_velocity
-    if not motor_control_mode:
-      motor_control_mode = self._motor_control_mode
+    # if not motor_control_mode:
+    #   motor_control_mode = self._motor_control_mode
 
     # No processing for motor torques
     if motor_control_mode is MOTOR_CONTROL_TORQUE:
@@ -202,6 +212,7 @@ class A1MotorModel(object):
       kd = self._kd
       desired_motor_angles = motor_commands
       desired_motor_velocities = np.full(NUM_MOTORS, 0)
+      
     elif motor_control_mode is MOTOR_CONTROL_HYBRID:
       # The input should be a 60 dimension vector
       assert len(motor_commands) == MOTOR_COMMAND_DIMENSION * NUM_MOTORS
@@ -211,10 +222,13 @@ class A1MotorModel(object):
           POSITION_INDEX::MOTOR_COMMAND_DIMENSION]
       desired_motor_velocities = motor_commands[
           VELOCITY_INDEX::MOTOR_COMMAND_DIMENSION]
+
       additional_torques = motor_commands[TORQUE_INDEX::MOTOR_COMMAND_DIMENSION]
+
     motor_torques = -1 * (kp * (motor_angle - desired_motor_angles)) - kd * (
         motor_velocity - desired_motor_velocities) + additional_torques
     motor_torques = self._strength_ratios * motor_torques
+
     if self._torque_limits is not None:
       if len(self._torque_limits) != len(motor_torques):
         raise ValueError(
@@ -228,6 +242,11 @@ class A1MotorModel(object):
 
 class SimpleRobot(object):
   def __init__(self, pybullet_client, robot_uid, simulation_time_step):
+    
+    self.joint_upper_bound = np.array([0.802851455917, 4.18879020479, - 0.916297857297, 0.802851455917, 4.18879020479, - 0.916297857297,
+                                       0.802851455917, 4.18879020479, - 0.916297857297, 0.802851455917, 4.18879020479, - 0.916297857297], dtype=np.float32)
+    self.joint_lower_bound = np.array([-0.802851455917, -1.0471975512, - 2.69653369433, - 0.802851455917, - 1.0471975512, - 2.69653369433,
+                                       -0.802851455917, - 1.0471975512, - 2.69653369433, - 0.802851455917, - 1.0471975512, - 2.69653369433], dtype=np.float32)
     self.pybullet_client = pybullet_client
     self.time_step = simulation_time_step
     self.quadruped = robot_uid
@@ -241,11 +260,12 @@ class SimpleRobot(object):
     self._step_counter = 0
     self._state_action_counter = 0
     self._motor_offset= np.array([0]*12)
+    self._motor_torque_limits = TORQUE_LIMIT
     self._motor_direction= np.array([1,  1,  1,  1,  1,  1, 1,  1,  1,  1,  1,  1])
     self.ReceiveObservation()
     self._kp = self.GetMotorPositionGains()
     self._kd = self.GetMotorVelocityGains()
-    self._motor_model = A1MotorModel(kp=self._kp, kd=self._kd, motor_control_mode=MOTOR_CONTROL_HYBRID)
+    self._motor_model = A1MotorModel(kp=self._kp, kd=self._kd, torque_limits=TORQUE_LIMIT, motor_control_mode=MOTOR_CONTROL_HYBRID)
     self._SettleDownForReset(reset_time=1.0)
     self._step_counter = 0
 
@@ -271,15 +291,21 @@ class SimpleRobot(object):
       self.pybullet_client.resetJointState(
           self.quadruped, self._joint_name_to_id[name], angle, targetVelocity=0)
           
-
-  def _SettleDownForReset(self, reset_time):
+  def _SettleDownForReset(self, reset_time, default_motor_angles=None):
     self.ReceiveObservation()
     if reset_time <= 0:
-      return
+        return
     for _ in range(500):
-      self._StepInternal(
-          INIT_MOTOR_ANGLES,
-          motor_control_mode=MOTOR_CONTROL_POSITION)
+        self._StepInternal(
+            INIT_MOTOR_ANGLES,
+            motor_control_mode=MOTOR_CONTROL_POSITION)
+      
+    if default_motor_angles is not None:
+        num_steps_to_reset = int(reset_time / self.time_step)
+        for _ in range(num_steps_to_reset):
+            self._StepInternal(
+                default_motor_angles,
+                motor_control_mode=MOTOR_CONTROL_POSITION)
         
   def _GetMotorNames(self):
     return MOTOR_NAMES
@@ -291,7 +317,7 @@ class SimpleRobot(object):
     ]
   
   def GetMotorPositionGains(self):
-     return np.array([ABDUCTION_P_GAIN, HIP_P_GAIN, KNEE_P_GAIN, ABDUCTION_P_GAIN,
+    return np.array([ABDUCTION_P_GAIN, HIP_P_GAIN, KNEE_P_GAIN, ABDUCTION_P_GAIN,
         HIP_P_GAIN, KNEE_P_GAIN, ABDUCTION_P_GAIN, HIP_P_GAIN, KNEE_P_GAIN,
         ABDUCTION_P_GAIN, HIP_P_GAIN, KNEE_P_GAIN])
     
@@ -300,19 +326,72 @@ class SimpleRobot(object):
         HIP_D_GAIN, KNEE_D_GAIN, ABDUCTION_D_GAIN, HIP_D_GAIN, KNEE_D_GAIN,
         ABDUCTION_D_GAIN, HIP_D_GAIN, KNEE_D_GAIN])
     
+  def _ClipMotorCommands(self, motor_commands, motor_control_mode):
+    """Clips commands to respect any set joint angle and torque limits.
+
+    Always clips position to be within ACTION_CONFIG. If
+    self._enable_clip_motor_commands, also clips positions to be within
+    MAX_MOTOR_ANGLE_CHANGE_PER_STEP of current positions.
+    Always clips torques to be within self._motor_torque_limits (but the torque
+    limits can be infinity).
+
+    Args:
+      motor_commands: np.array. Can be motor angles, torques, or hybrid.
+      motor_control_mode: A MotorControlMode enum.
+
+    Returns:
+      Clipped motor commands.
+    """
+    if motor_control_mode == MOTOR_CONTROL_TORQUE:
+        return np.clip(motor_commands, -1 * self._motor_torque_limits, self._motor_torque_limits)
+
+    elif motor_control_mode == MOTOR_CONTROL_POSITION:
+        return self._ClipMotorAngles(
+            desired_angles=motor_commands,
+            current_angles=self.GetTrueMotorAngles())
+
+    elif motor_control_mode == MOTOR_CONTROL_HYBRID:
+        # Clip angles
+        angles = motor_commands[np.array(range(NUM_MOTORS)) * 5]
+        clipped_positions = self._ClipMotorAngles(
+            desired_angles=angles,
+            current_angles=self.GetTrueMotorAngles())
+        motor_commands[np.array(range(NUM_MOTORS)) * 5] = clipped_positions
+        # Clip torques
+        torques = motor_commands[np.array(range(NUM_MOTORS)) * 5 + 4]
+        clipped_torques = np.clip(torques, -1 * self._motor_torque_limits, self._motor_torque_limits)
+        motor_commands[np.array(range(NUM_MOTORS)) * 5 + 4] = clipped_torques
+        return motor_commands
     
+    else:
+        raise Exception("PWM motor control mode is not supported in A1 robot!")
+      
+  def _ClipMotorAngles(self, desired_angles, current_angles):
+    # if self._enable_clip_motor_commands:
+    #     angle_ub = np.minimum(self._joint_angle_upper_limits,
+    #                             current_angles + MAX_MOTOR_ANGLE_CHANGE_PER_STEP)
+    #     angle_lb = np.maximum(self._joint_angle_lower_limits,
+    #                             current_angles - MAX_MOTOR_ANGLE_CHANGE_PER_STEP)
+    # else:
+    #     angle_ub = self._joint_angle_upper_limits
+    #     angle_lb = self._joint_angle_lower_limits
+    angle_ub = self.joint_upper_bound
+    angle_lb = self.joint_lower_bound
+    return np.clip(desired_angles, angle_lb, angle_ub)
+
+
   def compute_jacobian(self, robot, link_id):
     """Computes the Jacobian matrix for the given link.
 
     Args:
-      robot: A robot instance.
-      link_id: The link id as returned from loadURDF.
+    robot: A robot instance.
+    link_id: The link id as returned from loadURDF.
 
     Returns:
-      The 3 x N transposed Jacobian matrix. where N is the total DoFs of the
-      robot. For a quadruped, the first 6 columns of the matrix corresponds to
-      the CoM translation and rotation. The columns corresponds to a leg can be
-      extracted with indices [6 + leg_id * 3: 6 + leg_id * 3 + 3].
+    The 3 x N transposed Jacobian matrix. where N is the total DoFs of the
+    robot. For a quadruped, the first 6 columns of the matrix corresponds to
+    the CoM translation and rotation. The columns corresponds to a leg can be
+    extracted with indices [6 + leg_id * 3: 6 + leg_id * 3 + 3].
     """
     all_joint_angles = [state[0] for state in robot._joint_states]
     zero_vec = [0] * len(all_joint_angles)
@@ -418,6 +497,31 @@ class SimpleRobot(object):
     """
     return self._EndEffectorIK(
         leg_id, foot_local_position, position_in_world_frame=False)
+
+  def _EndEffectorFK(self, leg_id, angles):
+
+    toe_id = self._foot_link_ids[leg_id]
+    motors_per_leg = self.num_motors // self.num_legs
+    joint_position_idxs = [
+        i for i in range(leg_id * motors_per_leg, leg_id * motors_per_leg +
+                         motors_per_leg)
+    ]
+
+    base_translation = (0, 0, 0)
+    base_rotation = (0, 0, 0, 1)
+
+    base_position, base_orientation = self.pybullet_client.getBasePositionAndOrientation(self.quadruped)#robot.GetBasePosition(), robot.GetBaseOrientation()
+    base_position, base_orientation = self.pybullet_client.multiplyTransforms(
+        base_position, base_orientation, base_translation, base_rotation)
+
+    # Projects to world space.
+    # world_link_pos, _ = self.pybullet_client.multiplyTransforms(
+    #     base_position, base_orientation, link_position, _IDENTITY_ORIENTATION)
+
+
+    return
+
+
   def _EndEffectorIK(self, leg_id, position, position_in_world_frame):
     """Calculate the joint positions from the end effector position."""
     assert len(self._foot_link_ids) == self.num_legs
@@ -442,6 +546,9 @@ class SimpleRobot(object):
     # as the angles.
     return joint_position_idxs, joint_angles.tolist()
     
+  def ResetTime(self):
+    self._step_counter = 0
+    
   def GetTimeSinceReset(self):
     return self._step_counter * self.time_step
     
@@ -456,6 +563,15 @@ class SimpleRobot(object):
     """
     velocity, _ = self.pybullet_client.getBaseVelocity(self.quadruped)
     return velocity
+
+  def GetBaseAngularVelocity(self):
+    """Get the linear velocity of minitaur's base.
+
+    Returns:
+      The velocity of minitaur's base.
+    """
+    _, angular_velocity = self.pybullet_client.getBaseVelocity(self.quadruped)
+    return angular_velocity
 
   def GetTrueBaseOrientation(self):
     pos,orn = self.pybullet_client.getBasePositionAndOrientation(
@@ -556,7 +672,7 @@ class SimpleRobot(object):
     observation.extend(self.GetTrueBaseOrientation())
     observation.extend(self.GetTrueBaseRollPitchYawRate())
     return observation
-    
+
   def ApplyAction(self, motor_commands, motor_control_mode):
     """Apply the motor commands using the motor model.
 
@@ -565,6 +681,10 @@ class SimpleRobot(object):
       motor_control_mode: A MotorControlMode enum.
     """
     motor_commands = np.asarray(motor_commands)
+    # if motor_control_mode is None:
+    #   motor_control_mode = self._motor_control_mode
+    motor_commands = self._ClipMotorCommands(motor_commands, motor_control_mode)
+    
     q, qdot = self.GetPDObservation()
     qdot_true = self.GetTrueMotorVelocities()
     actual_torque, observed_torque = self._motor_model.convert_to_torque(
@@ -601,21 +721,31 @@ class SimpleRobot(object):
   def ReceiveObservation(self):    
     self._joint_states = self.pybullet_client.getJointStates(self.quadruped, self._motor_id_list)
 
-  def _StepInternal(self, action, motor_control_mode):
+  def _StepInternal(self, action, motor_control_mode=None,
+                    residual_commands=None, residual_control_mode=None):
+    # Can be useful in the future
+    # if self._timesteps is not None:
+    #     now = time.time()
+    #     self._timesteps.append(now - self._last_step_time_wall)
+    #     self._last_step_time_wall = now
+    # if not self._is_safe:
+    #     return
+ 
     self.ApplyAction(action, motor_control_mode)
     self.pybullet_client.stepSimulation()
     self.ReceiveObservation()
     self._state_action_counter += 1
     
-  def Step(self, action):
+  def Step(self, action, cmode=MOTOR_CONTROL_HYBRID, repeat = ACTION_REPEAT):
     """Steps simulation."""
     #if self._enable_action_filter:
     #  action = self._FilterAction(action)
 
-    for i in range(ACTION_REPEAT):
+
+    for i in range(repeat):
       #proc_action = self.ProcessAction(action, i)
       proc_action = action
-      self._StepInternal(proc_action, motor_control_mode=MOTOR_CONTROL_HYBRID)
+      self._StepInternal(proc_action, motor_control_mode=cmode)
       self._step_counter += 1
     
   def _BuildJointNameToIdDict(self):
@@ -670,6 +800,8 @@ class SimpleRobot(object):
     self._foot_link_ids.sort()
     self._leg_link_ids.sort()
 
+   
+
     return
 
   def link_position_in_base_frame( self,   link_id ):
@@ -709,3 +841,6 @@ class SimpleRobot(object):
           )
     return np.array(foot_positions)
     
+  def GetLegLinkIDs(self):
+    """Get list of IDs for all leg links."""
+    return self._lower_link_ids 

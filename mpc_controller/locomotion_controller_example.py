@@ -3,6 +3,7 @@ from __future__ import absolute_import
 from __future__ import division
 #from __future__ import google_type_annotations
 from __future__ import print_function
+from copy import deepcopy
 
 import os
 import inspect
@@ -38,6 +39,8 @@ FLAGS = flags.FLAGS
 _NUM_SIMULATION_ITERATION_STEPS = 300
 
 
+
+
 _STANCE_DURATION_SECONDS = [
     0.3
 ] * 4  # For faster trotting (v > 1.5 ms reduce this to 0.13s).
@@ -67,7 +70,7 @@ _STANCE_DURATION_SECONDS = [
 # )
 
 # Trotting
-_DUTY_FACTOR = [0.6] * 4
+_DUTY_FACTOR = [0.81] * 4
 _INIT_PHASE_FULL_CYCLE = [0.9, 0, 0, 0.9]
 _MAX_TIME_SECONDS = 50
 
@@ -81,7 +84,7 @@ _INIT_LEG_STATE = (
 
 
 
-def _generate_example_linear_angular_speed(t):
+def _generate_example_linear_angular_speed(t, lin, ang):
   """Creates an example speed profile based on time for demo purpose."""
   vx = 0.6 * robot_sim.MPC_VELOCITY_MULTIPLIER
   vy = 0.2 * robot_sim.MPC_VELOCITY_MULTIPLIER
@@ -99,13 +102,22 @@ def _generate_example_linear_angular_speed(t):
       axis=0)(
           t)
 
-  return speed[0:3], speed[3]
+  step = 0.005
+  target_lin = [0,0,0]
+  target_ang = [3]
+  anf_new = deepcopy(ang)
+
+  if ang[0] < target_ang[0]:
+      anf_new = np.array([ang[0] + step])
+
+  return lin, anf_new#speed[0:3], speed[3]
 
 
 def _setup_controller(robot):
   """Demonstrates how to create a locomotion controller."""
   desired_speed = (0, 0)
   desired_twisting_speed = 0
+  desired_height = 0.16
 
   gait_generator = openloop_gait_generator.OpenloopGaitGenerator(
       robot,
@@ -121,7 +133,7 @@ def _setup_controller(robot):
       state_estimator,
       desired_speed=desired_speed,
       desired_twisting_speed=desired_twisting_speed,
-      desired_height=robot_sim.MPC_BODY_HEIGHT,
+      desired_height=desired_height,#robot_sim.MPC_BODY_HEIGHT,
       foot_clearance=0.01)
 
   st_controller = torque_stance_leg_controller.TorqueStanceLegController(
@@ -191,9 +203,9 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
   
   plane = True
   if plane:
-    p.loadURDF("plane.urdf")
-    #planeShape = p.createCollisionShape(shapeType = p.GEOM_PLANE)
-    #ground_id  = p.createMultiBody(0, planeShape)
+    new_terrain = p.loadURDF("plane.urdf")
+    # planeShape = p.createCollisionShape(shapeType = p.GEOM_PLANE)
+    # ground_id  = p.createMultiBody(0, planeShape)
   else:
     numHeightfieldRows = 256
     numHeightfieldColumns = 256
@@ -209,6 +221,7 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
     terrainShape = p.createCollisionShape(shapeType = p.GEOM_HEIGHTFIELD, meshScale=[.05,.05,1], heightfieldTextureScaling=(numHeightfieldRows-1)/2, heightfieldData=heightfieldData, numHeightfieldRows=numHeightfieldRows, numHeightfieldColumns=numHeightfieldColumns)
     ground_id  = p.createMultiBody(0, terrainShape)
 
+  p.changeDynamics(new_terrain, -1, lateralFriction=1.0)
   #p.resetBasePositionAndOrientation(ground_id,[0,0,0], [0,0,0,1])
   
   #p.changeDynamics(ground_id, -1, lateralFriction=1.0)
@@ -228,14 +241,14 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
   #  time.sleep(1./240)  
   current_time = robot.GetTimeSinceReset()
   #logId = p.startStateLogging(p.STATE_LOGGING_PROFILE_TIMINGS, "mpc.json")
-  
+  lin_speed, ang_speed = np.array([0,0,0]), np.array([0])
   while current_time < max_time:
     #pos,orn = p.getBasePositionAndOrientation(robot_uid)
     #print("pos=",pos, " orn=",orn)
     p.submitProfileTiming("loop")
     
     # Updates the controller behavior parameters.
-    lin_speed, ang_speed = _generate_example_linear_angular_speed(current_time)
+    lin_speed, ang_speed = _generate_example_linear_angular_speed(current_time, lin_speed, ang_speed)
     #lin_speed, ang_speed = (0., 0., 0.), 0.
     _update_controller_params(controller, lin_speed, ang_speed)
 
@@ -253,7 +266,7 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
     p.submitProfileTiming()
   #p.stopStateLogging(logId)
   #while p.isConnected():
-  #  time.sleep(0.1)
+    time.sleep(0.01)
 
 def main(argv):
   del argv
