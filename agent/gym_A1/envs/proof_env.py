@@ -41,9 +41,12 @@ from mpc_controller import a1_sim as robot_sim
 from gym.utils import seeding
 from gym import spaces
 import gym
+from copy import deepcopy
 
 from kernel.models.denseNN import DenseNN
 import torch
+
+
 
 import gc
 gc.enable()
@@ -58,14 +61,44 @@ MPC: 200Hz
 PD: 1kHz
 '''
 
+FLAGS = flags.FLAGS
+
+
+_NUM_SIMULATION_ITERATION_STEPS = 300
+
 
 _STANCE_DURATION_SECONDS = [
     0.3
-] * 4  
+] * 4  # For faster trotting (v > 1.5 ms reduce this to 0.13s).
 
+# Standing
+# _DUTY_FACTOR = [1.] * 4
+# _INIT_PHASE_FULL_CYCLE = [0., 0., 0., 0.]
+# _MAX_TIME_SECONDS = 5
+
+# _INIT_LEG_STATE = (
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.S,
+# )
+
+# Tripod
+# _DUTY_FACTOR = [.8] * 4
+# _INIT_PHASE_FULL_CYCLE = [0., 0.25, 0.5, 0.]
+# _MAX_TIME_SECONDS = 5
+
+# _INIT_LEG_STATE = (
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.SWING,
+# )
+
+# Trotting
 _DUTY_FACTOR = [0.6] * 4
 _INIT_PHASE_FULL_CYCLE = [0.9, 0, 0, 0.9]
-_MAX_TIME_SECONDS = 150
+_MAX_TIME_SECONDS = 50
 
 _INIT_LEG_STATE = (
     gait_generator_lib.LegState.SWING,
@@ -75,13 +108,14 @@ _INIT_LEG_STATE = (
 )
 
 
+
+
 class A1_env_v1(gym.Env):
     """The gym environment for the locomotion tasks.
     using this env for reward tuning
     """
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second': 1000
     }
 
     def __init__(self,
@@ -141,6 +175,9 @@ class A1_env_v1(gym.Env):
         self.reward_params = reward_params
         self.terrain_difficulty = terrain_difficulty
 
+        self.rendering_enabled = True
+        self.record_video = False
+        self._max_time_limit = 500
 
         config = {
             "learning_rate":1e-3,
@@ -167,44 +204,22 @@ class A1_env_v1(gym.Env):
         self._usePhaseObs = usePhaseObs
         self._useContactStates = useContactStates
 
-
-        self.GREENCOLOR = [0, 1, 0, 0.8]
-        self.REDCOLOR = [1, 0, 0, 0.8]
-        self.BLUECOLOR = [0, 0, 1, 0.8]
-
-        self.rendering_enabled = enable_rendering
-        self.enable_rays = enable_rays
-        self.record_video = enable_recording
         self._p = pybullet
-
-        if self.record_video == 1:
-            self._p.connect(self._p.GUI, options=f"--width=1280 --height=720 --mp4=\"{video_name}.mp4\" --mp4fps=25")
-            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
-            self._p.configureDebugVisualizer(self._p.COV_ENABLE_GUI, 0)
-        elif self.record_video == 0 and self.rendering_enabled:
-            self._p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
-        elif self.record_video == 2:
-            self._p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
-        else:
-            self._p = bullet_client.BulletClient(connection_mode=pybullet.DIRECT)
-
+        self._p = bullet_client.BulletClient(connection_mode=pybullet.GUI)
         self._p.setAdditionalSearchPath(pd.getDataPath())
-
-        self._max_time_limit = max_time_limit
+        
         self._time_step = time_step
-        self.setupPhysicsParmeters()
-
-        #TODO add perlin
         self.terrain_names = ["flat", "uniform", "stair", "gap"] 
         self.terrain_probability = terrain_probability
         self.terrain_type = None 
-        
-        # self.terrain_names = ["flat", "perlin", "uniform", "stair", "gap"]
         self.loadTerrain(terrain_overide=terrain_type)
 
         self.loadRobot()
         self.joint_upper_bound = self._robot.joint_upper_bound
         self.joint_lower_bound = self._robot.joint_lower_bound
+
+
+
 
         # Start making observation space
         obs_upper_bound = np.concatenate((
@@ -259,18 +274,7 @@ class A1_env_v1(gym.Env):
         self.action_space = spaces.Box(low=self.action_lower_bound, high=self.action_upper_bound, shape=(12,), dtype=np.float32)
   
 
-        # reset viewpoint
-        # Set the default render options.
-        self._camera_dist = 1.5
-        self._camera_yaw = 0
-        # self._camera_yaw_offset = 25
-        self._camera_pitch = -25
-        self._render_width = 960 # 480
-        self._render_height = 720 # 360
-        if self.record_video:
-            self._p.resetDebugVisualizerCamera(self._camera_dist, self._camera_yaw, self._camera_pitch, [0, 0, 0])
-
-        ############################
+        ##################
         # Set up MPC controller
         self.gait_generator = openloop_gait_generator.OpenloopGaitGenerator(
             self._robot,
@@ -291,17 +295,8 @@ class A1_env_v1(gym.Env):
         self._minimum_target_distance = target_distance  # m
         self.target = self.generateNewTarget()  # this must go after loading the robot
 
-        self.ball_urdf = __cwd__ + "/data/ball_vision.urdf"
-        if self.record_video == 2 or self.rendering_enabled > 0:
-            self.target_indicator = self._p.loadURDF(self.ball_urdf, basePosition=self.target, baseOrientation=[0, 0, 0, 1],
-                                                     useFixedBase=True, globalScaling=0.5)
-            self._p.changeVisualShape(self.target_indicator, -1, rgbaColor=self.GREENCOLOR)
-  
-
         self.reset_num = 0
         self.reset()
-        self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
-        # self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
 
         self.tmp_time_start = 0
         self.tmp_time_end = 0
@@ -311,44 +306,7 @@ class A1_env_v1(gym.Env):
         self.np_random, self.np_random_seed = seeding.np_random(seed)
         return [self.np_random_seed]
 
-    def hard_reset_func(self, terrain_overide=None):
-      
-        self._p.resetSimulation()
 
-        self._world_dict = {}
-        self._observation = None
-        # self._vision_input_size = 10
-        self._env_step_counter = 0  # this attribute is not used
-
-        self.setupPhysicsParmeters() 
-
-        self.loadTerrain(terrain_overide=terrain_overide)
-        self.loadRobot()
-
-        if self.record_video:
-            self._p.resetDebugVisualizerCamera(self._camera_dist, self._camera_yaw, self._camera_pitch, [0, 0, 0])
-
-        ############################
-        # Set up MPC controller
-        self.gait_generator = openloop_gait_generator.OpenloopGaitGenerator(
-            self._robot,
-            stance_duration=_STANCE_DURATION_SECONDS,
-            duty_factor=_DUTY_FACTOR,
-            initial_leg_phase=_INIT_PHASE_FULL_CYCLE,   
-            initial_leg_state=_INIT_LEG_STATE)
-        self.gait_generator.reset(0)
-
-        self.resetResidualCommands()
-        # self._MPC_warmup_time = MPC_warmup_time
-        ############################
-        # Set up the task
-    
-        self.target = self.generateNewTarget()  # this must go after loading the robot
-
-        self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
-        # self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
-
-    
 
     def reset(self,
               terrain_overide=None,
@@ -380,37 +338,6 @@ class A1_env_v1(gym.Env):
         self.num_targets_reached = 0
         self.universal_reward = 0
         self.reward_proportions = {"gravity":0, "angular":0, "linear":0, "total":0}
-        
-        if self.reset_num > 5:  # hard reset
-            # print(f"\t\treseting...Hard reset...")
-            self.hard_reset_func(terrain_overide=terrain_overide)
-            self.reset_num = 0
-            # print(f"\t\treseting...Hard reset...Done")
-        else:
-            self.loadTerrain(terrain_overide=terrain_overide)
-
-        
-        # print(f"\treseting...start reset loops")
-        need_reset = True
-        reset_count = 0
-        while need_reset:
-            reset_count += 1
-            self.updateNominalPoseAndTarget()
-            self._p.resetBasePositionAndOrientation(self._robot.quadruped, self.base_pos_nom, self.base_orn_nom)
-            self._p.resetBaseVelocity(self._robot.quadruped, linearVelocity=0.0)
-            self._robot.ResetPose()
-            self._robot._SettleDownForReset(reset_time=1.0)
-            self._robot.ReceiveObservation()
-            self._robot.ResetTime()
-            
-            self.gait_generator.reset(0)
-            
-            temp_done = False
-            while not temp_done and self._robot.GetTimeSinceReset() < self._MPC_warmup_time:
-                _, _, temp_done, _ = self.step(np.zeros_like(self.action_space))
-            
-            need_reset = self._termination()
-            self._env_step_counter = 0  # this attribute is not used
 
         self.reset_num += 1
         self._observation = self._get_observation()
@@ -418,10 +345,10 @@ class A1_env_v1(gym.Env):
 
     def step(self, action): #, lin_speed_cmd=None, ang_speed_cmd=None):
 
-        # self.render()
-        if (self.rendering_enabled):
-            pass
-            self.render()
+        self.render()
+        # if (self.rendering_enabled):
+        #     pass
+        #     self.render()
 
         return self.stepPD(action)
             
@@ -479,7 +406,7 @@ class A1_env_v1(gym.Env):
         # self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
         self._env_step_counter += 1
         
-        self.check_target_reached()
+        # self.check_target_reached()
         self._observation = self._get_observation()
 
         reward = self._reward()
@@ -518,8 +445,8 @@ class A1_env_v1(gym.Env):
                 [yaw, pitch, dist] = self._p.getDebugVisualizerCamera()[8:11]
                 self._p.resetDebugVisualizerCamera(dist, yaw, pitch, base_pos)
            
-            if self._robot.GetTimeSinceReset() / self._time_step % 100:  # 1/10 frequency
-                self._p.resetBasePositionAndOrientation(self.target_indicator, self.target, [0, 0, 0, 1])
+            # if self._robot.GetTimeSinceReset() / self._time_step % 100:  # 1/10 frequency
+            #     self._p.resetBasePositionAndOrientation(self.target_indicator, self.target, [0, 0, 0, 1])
  
 
         elif mode == 'rgb_array':
@@ -559,6 +486,7 @@ class A1_env_v1(gym.Env):
             rgb_array = rgb_array[:, :, :3]
             return rgb_array
         else:
+            pass
             super(MyEnv, self).render(mode=mode) # just raise an exception
 
     def check_success(self):
@@ -622,36 +550,7 @@ class A1_env_v1(gym.Env):
 
     def _reward(self):
 
-        #gravity reward - creates stability
-        gravity_vec = self.GetGravityVector()
-        gravity_error = np.array([0, 0, -1]) - gravity_vec
-        gravity_error = np.linalg.norm(gravity_error)  
-        gravity_reward = np.exp(-gravity_error**2*self.reward_params.gravity)
-
-        # angular reward = rotational
-        desired_ang_vel  = np.array([self.ang_speed_cmd])
-        ang_vel = self._robot.GetBaseRollPitchYawRate()[2]
-        ang_reward = np.exp(-np.linalg.norm(desired_ang_vel - ang_vel)**2*self.reward_params.angular)
-
-        #linear reward = speed and direction
-        desired_lin_com = np.array([self.lin_speed_cmd[0],self.lin_speed_cmd[1]])
-        lin_vel = self._robot.GetBaseVelocity()[:2]
-        linear_reward = np.exp(-np.linalg.norm(desired_lin_com - lin_vel)**2*self.reward_params.linear)
-
-        #distance reward = speed and direction
-        target_dist = np.clip(self.GetTargetDistance(), -1,1)
-        distance_reward = np.exp(-np.linalg.norm(0 - target_dist)**2*self.reward_params.distance)
-        
-        reward = gravity_reward + ang_reward + linear_reward + distance_reward
-
-
-        self.reward_proportions['gravity'] += gravity_reward 
-        self.reward_proportions['angular'] += ang_reward 
-        self.reward_proportions['linear'] += linear_reward 
-        self.reward_proportions['total'] += reward * 0.01
-        
-
-        return reward*0.01
+        return 0
 
 
     def _get_observation(self):
@@ -847,8 +746,6 @@ class A1_env_v1(gym.Env):
         self.residual = np.zeros(self.action_space.shape[0])
 
     def loadRobot(self):
-        print(robot_sim.URDF_NAME, robot_sim.START_POS)
-        input()
         quadruped = self._p.loadURDF(robot_sim.URDF_NAME, robot_sim.START_POS)
         self._robot = robot_sim.SimpleRobot(self._p, quadruped, simulation_time_step=self._time_step)
         self.base_pos_nom = np.r_[0,0,0.3]
@@ -1068,7 +965,7 @@ class A1_env_v1(gym.Env):
         return self._world_dict['ground']
 
 
-    def set_ground(self, ground_id): 
+    def set_ground(self, ground_id):
         """Set simulation ground model."""
         self._world_dict['ground'] = ground_id
 
@@ -1131,7 +1028,7 @@ class A1_env_v1(gym.Env):
 
 
 
-def _run_example(max_time=_MAX_TIME_SECONDS):
+def _run_example():
     """Runs the locomotion controller example."""
     from collections import namedtuple
     args = {}

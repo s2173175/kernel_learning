@@ -81,7 +81,7 @@ class A1_env_v1(gym.Env):
     """
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second': 1000
+        'video.frames_per_second': 100
     }
 
     def __init__(self,
@@ -320,7 +320,7 @@ class A1_env_v1(gym.Env):
         # self._vision_input_size = 10
         self._env_step_counter = 0  # this attribute is not used
 
-        self.setupPhysicsParmeters() 
+        self.setupPhysicsParmeters()
 
         self.loadTerrain(terrain_overide=terrain_overide)
         self.loadRobot()
@@ -663,15 +663,10 @@ class A1_env_v1(gym.Env):
         # first we need to set up class params for the kernal as well
         # phase, ang_cmd, forward_cmd, side_cmd
         r = self.GetTargetDistance()
-        pos = self.GetBasePose()
-        robotOrn = self._p.getEulerFromQuaternion(pos[1])
-        theta_ = np.arctan2(self.target[1]-pos[0][1],self.target[0]-pos[0][0]) - robotOrn[2] 
-        theta = self.ModNearest(math.degrees(theta_))
-        # theta = self.GetYawError()
-        lin_cmd = [r*np.cos(theta),r*np.sin(theta),0]
-        ang_cmd = 0.3*theta
+        pos = self.Getdef run_example():
 
-        #this needs to update gradually
+
+    return update gradually
         # if (self._robot.GetTimeSinceReset() % 0.05 == 0): #freq = 20
         self.lin_speed_cmd[0] += max( min( lin_cmd[0] - self.lin_speed_cmd[0], 0.005) , -0.005)
         self.lin_speed_cmd[1] += max( min( lin_cmd[1] - self.lin_speed_cmd[1], 0.005) , -0.005)
@@ -847,8 +842,6 @@ class A1_env_v1(gym.Env):
         self.residual = np.zeros(self.action_space.shape[0])
 
     def loadRobot(self):
-        print(robot_sim.URDF_NAME, robot_sim.START_POS)
-        input()
         quadruped = self._p.loadURDF(robot_sim.URDF_NAME, robot_sim.START_POS)
         self._robot = robot_sim.SimpleRobot(self._p, quadruped, simulation_time_step=self._time_step)
         self.base_pos_nom = np.r_[0,0,0.3]
@@ -1068,7 +1061,7 @@ class A1_env_v1(gym.Env):
         return self._world_dict['ground']
 
 
-    def set_ground(self, ground_id): 
+    def set_ground(self, ground_id):
         """Set simulation ground model."""
         self._world_dict['ground'] = ground_id
 
