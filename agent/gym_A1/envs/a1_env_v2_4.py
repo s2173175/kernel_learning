@@ -847,8 +847,6 @@ class A1_env_v1(gym.Env):
         self.residual = np.zeros(self.action_space.shape[0])
 
     def loadRobot(self):
-        print(robot_sim.URDF_NAME, robot_sim.START_POS)
-        input()
         quadruped = self._p.loadURDF(robot_sim.URDF_NAME, robot_sim.START_POS)
         self._robot = robot_sim.SimpleRobot(self._p, quadruped, simulation_time_step=self._time_step)
         self.base_pos_nom = np.r_[0,0,0.3]
