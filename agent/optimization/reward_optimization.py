@@ -47,19 +47,31 @@ from callbacks.sb3_callbacks import TensorboardCallback
 from utils.lr_scheduler import LRScheduler
 
 
+
+
 def main(trial):
 
     args = {}
     args['gravity'] = trial.suggest_float("gravity", 1,4)
     args['distance'] = trial.suggest_float("distance", 1,4)
     args['linear'] = trial.suggest_float("linear",  15, 20)
-    args['agular'] = trial.suggest_float("angular", 5,10)
+    args['angular'] = trial.suggest_float("angular", 5,10)
     # args['g_weight'] = trial.suggest_int("rollouts", 5000, 20000, step=5000)
     # args['d_weight'] = trial.suggest_int("num_epochs", 1, 19, step=3)
     # args['l_weight'] = trial.suggest_categorical("net_depth", ['net_small', 'net_med', 'net_large'])
     # args['l_weight'] = trial.suggest_categorical("net_depth", ['net_small', 'net_med', 'net_large'])
  
-    args['reward_dificulty'] = 0.04
+    args['env_dificulty'] = 0.04
+    args['target_distance'] = 2
+
+    args['lr'] = 0.001
+    args['lr_decay'] = 1e-7
+    args['entropy_coef'] = 0.000015
+    args['batch_size'] = 2000
+    args['roll_length'] = 20000
+    args['num_epochs'] = 10
+
+
     args = namedtuple("ObjectName", args.keys())(*args.values())
 
  
@@ -82,7 +94,7 @@ def main(trial):
             # visionEnabled=False,
             rayLength=0.8,
             vision_dim=(28, 28),
-            enable_rendering=0,  # 0: disabled, 1: render, 2: target + direction
+            enable_rendering=1,  # 0: disabled, 1: render, 2: target + direction
             enable_recording=0,  # 0: disabled, 1: built-in render, 2: moviepy
             enable_rays=0,  # 0: disabled, 1: balls, 2: balls + rays
 
@@ -90,7 +102,12 @@ def main(trial):
             max_time_limit=60,  # secs, in realtime
 
             autoencoder_filename="lidar_28x28_0.8m_clipped.pth",
-            kernel_dir = "walking_cmd/checkpoint_best.pt"
+            kernel_dir = "walking_cmd/checkpoint_best.pt",
+            reward_params = args,
+            terrain_difficulty = args.env_dificulty,
+            target_distance = args.target_distance
+            
+
         )
 
   
@@ -98,18 +115,18 @@ def main(trial):
                         net_arch=[256,256,256,dict(pi=[128], vf=[64])])
 
 
-    num_cpu = 3
+    num_cpu = 1
 
-    env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
-    # env = gym.make("gym_A1:A1_all_terrains-v2", **env_config)
-    # env = Monitor(env)
+    # env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
+    env = gym.make("gym_A1:A1_all_terrains-v24", **env_config)
+    env = Monitor(env)
     
 
-    eval_callback = EvalCallback(env, best_model_save_path=f'./results/model/trial_{trial._trial_id}/',
+    eval_callback = EvalCallback(env, best_model_save_path=f'./results/model_reward/trial_{trial._trial_id}/',
                                 log_path='./results/logs/', eval_freq=5e5/num_cpu, # eg every 100,000 per cpu
                                 deterministic=True, render=False, n_eval_episodes = 5)
 
-    output = {'reward':0}                       
+    output = {'mean_target_count':0}                       
     callback = CallbackList([eval_callback, TensorboardCallback(trial, args, output, num_procs=num_cpu)])
 
     lr_sched = LRScheduler(1e-8, args.lr, args.lr_decay)
@@ -119,7 +136,7 @@ def main(trial):
                 env, 
                 policy_kwargs=policy_kwargs, 
                 verbose=1, 
-                tensorboard_log="./results/hyper_param_opt2/", 
+                tensorboard_log="./results/reward_opt/", 
                 learning_rate=lr_sched.schedule(), 
                 batch_size=int(args.batch_size), 
                 n_steps =int(args.roll_length/num_cpu), 
@@ -129,7 +146,7 @@ def main(trial):
 
     model.learn(total_timesteps=3e6, tb_log_name=f'{trial._trial_id}_id', callback=callback)
 
-
+    print(output['mean_target_count'])
     return output['mean_target_count'] #target_count and rollout reward
 
     #TODO save each policy under a different name
@@ -149,7 +166,7 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
     """
     def _init() -> gym.Env:
         
-        env = gym.make("gym_A1:A1_all_terrains-v2", **env_config)
+        env = gym.make("gym_A1:A1_all_terrains-v24", **env_config)
         env = Monitor(env)
         env.seed(seed + rank)
         return env
@@ -159,11 +176,11 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
 
 if __name__ == '__main__':
 
-    storage = "sqlite:///reward_opt.db"
+    storage = "sqlite:///demo.db"
     study = optuna.create_study(storage=storage, directions=["maximize"])
 
-    with parallel_backend('multiprocessing'):  # Overrides `prefer="threads"` to use multi-processing.
-        study.optimize(main, n_trials=100, n_jobs=3)
+    #with parallel_backend('multiprocessing'):  # Overrides `prefer="threads"` to use multi-processing.
+    study.optimize(main, n_trials=100, n_jobs=1)
 
 
     study.best_params 

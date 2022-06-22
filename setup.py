@@ -254,7 +254,7 @@ setup(
     ],
     install_requires=[
         'numpy',
-#	'pybullet',
+#	'pybullet',pip
     ],
     ext_modules=extensions,
     classifiers=[
