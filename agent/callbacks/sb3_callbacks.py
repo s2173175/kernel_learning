@@ -12,6 +12,7 @@ import torch as th
 import time
 import numpy as np
 from typing import Any, Dict
+import random
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.logger import Video
 from stable_baselines3.common.logger import TensorBoardOutputFormat
@@ -60,19 +61,17 @@ class TensorboardCallback(BaseCallback):
         """
         This event is triggered before exiting the `learn()` method.
         """
-        if len(self.episode_rewards)>10:
-            self.episode_rewards = self.episode_rewards[-10:]
+        if len(self.episode_rewards)>30:
+            self.episode_rewards = self.episode_rewards[-30:]
         
-        self.output['reward'] = sum(self.episode_rewards)/len(self.episode_rewards)
+        self.output['mean_target_count'] = sum(self.target_counts)/len(self.target_counts)
         pass
 
     def calc_reward_dist(self, dist):
         # {"gravity":0, "angular":0, "linear":0, "total":0}
-
-        total = abs(dist['gravity']) + abs(dist['angular']) + abs(dist['linear'])
-        self.gravity_ratios.append(dist['gravity']/total)
-        self.angular_ratios.append(dist['angular']/total)
-        self.linear_ratios.append(dist['linear']/total)
+        self.gravity_ratios.append(dist['gravity'])
+        self.angular_ratios.append(dist['angular'])
+        self.linear_ratios.append(dist['linear'])
 
         return
 
@@ -96,35 +95,35 @@ class TensorboardCallback(BaseCallback):
         length = len(self.successes)
         assert length  == len(self.gravity_ratios) == len(self.angular_ratios) == len(self.linear_ratios) == len(self.target_counts)
 
-        if length > 10:
-            self.successes = self.successes[-10:]
-            self.gravity_ratios = self.gravity_ratios[-10:]
-            self.angular_ratios = self.angular_ratios[-10:]
-            self.linear_ratios = self.linear_ratios[-10:]
-            self.target_counts = self.target_counts[-10:]
-            self.episode_rewards = self.episode_rewards[-10:]
+        if length > 30:
+            self.successes = self.successes[-30:]
+            self.gravity_ratios = self.gravity_ratios[-30:]
+            self.angular_ratios = self.angular_ratios[-30:]
+            self.linear_ratios = self.linear_ratios[-30:]
+            self.target_counts = self.target_counts[-30:]
+            self.episode_rewards = self.episode_rewards[-30:]
 
         length = len(self.successes)
 
         if length > 0:
             self.logger.record('rollout/success_rate', sum(self.successes)/length)
-            self.logger.record('rollout/gravity_ratio', sum(self.gravity_ratios)/length)
-            self.logger.record('rollout/angular_ratio', sum(self.angular_ratios)/length)
-            self.logger.record('rollout/linear_ratio', sum(self.linear_ratios)/length)
+            self.logger.record('rollout/gravity', sum(self.gravity_ratios)/length)
+            self.logger.record('rollout/angular', sum(self.angular_ratios)/length)
+            self.logger.record('rollout/linear', sum(self.linear_ratios)/length)
             self.logger.record('rollout/target_count', sum(self.target_counts)/length)
             self.logger.record('rollout/mean_reward', sum(self.episode_rewards)/length)
 
-            self.trial.report(sum(self.episode_rewards)/length, self.num_timesteps)
+            self.trial.report(sum(self.target_counts)/length, self.num_timesteps)
 
             # Handle pruning based on the intermediate value.
-            if self.trial.should_prune():
-                raise optuna.exceptions.TrialPruned()
+            # if self.trial.should_prune():
+            #     raise optuna.exceptions.TrialPruned()
 
         else:
             self.logger.record('rollout/success_rate', 0)
-            self.logger.record('rollout/gravity_ratio', 0)
-            self.logger.record('rollout/angular_ratio', 0)
-            self.logger.record('rollout/linear_ratio', 0)
+            self.logger.record('rollout/gravity', 0)
+            self.logger.record('rollout/angular', 0)
+            self.logger.record('rollout/linear', 0)
             self.logger.record('rollout/target_count', 0)
             self.logger.record('rollout/mean_reward', 0)
 

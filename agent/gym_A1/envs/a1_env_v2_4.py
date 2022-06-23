@@ -508,11 +508,11 @@ class A1_env_v1(gym.Env):
             if not self.rendering_enabled and not self.record_video:
                 assert False, "please start with correct rendering mode"
                 
-            # self._p.resetBasePositionAndOrientation(self.target_indicator, self.target, [0, 0, 0, 1])
+            self._p.resetBasePositionAndOrientation(self.target_indicator, self.target, [0, 0, 0, 1])
 
-            # base_pos = self.GetBasePosition()
-            # base_pos[2] = 0.3
-            # base_rot = self.GetBaseOrientationEuler()
+            base_pos = self.GetBasePosition()
+            base_pos[2] = 0.3
+            base_rot = self.GetBaseOrientationEuler()
             if self.record_video:
                 # Also keep the previous orientation of the camera set by the user.
                 [yaw, pitch, dist] = self._p.getDebugVisualizerCamera()[8:11]
@@ -1167,7 +1167,7 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
             # visionEnabled=False,
             rayLength=0.8,
             vision_dim=(28, 28),
-            enable_rendering=1,  # 0: disabled, 1: render, 2: target + direction
+            enable_rendering=0,  # 0: disabled, 1: render, 2: target + direction
             enable_recording=0,  # 0: disabled, 1: built-in render, 2: moviepy
             enable_rays=0,  # 0: disabled, 1: balls, 2: balls + rays
 
@@ -1183,9 +1183,11 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
 
         )
     env = A1_env_v1(**env_config)  
-    while True:
+    start = time.time()
+    for i in range(1000):
         env.step(np.array([0,0,0,0,0,0,0,0,0,0,0,0]))
-        print('here')
+        
+    print(time.time()-start)
 
        
 def drawCircle(p, center, radius, color=[0, 1, 1], thickness=5, lifeTime=0.01):

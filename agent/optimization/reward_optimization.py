@@ -32,6 +32,8 @@ import argparse
 from collections import namedtuple
 import optuna
 
+import gc
+gc.enable()
 
 
 from stable_baselines3 import PPO
@@ -53,13 +55,24 @@ def main(trial):
     args['gravity'] = trial.suggest_float("gravity", 1,4)
     args['distance'] = trial.suggest_float("distance", 1,4)
     args['linear'] = trial.suggest_float("linear",  15, 20)
-    args['agular'] = trial.suggest_float("angular", 5,10)
+    args['angular'] = trial.suggest_float("angular", 5,10)
     # args['g_weight'] = trial.suggest_int("rollouts", 5000, 20000, step=5000)
     # args['d_weight'] = trial.suggest_int("num_epochs", 1, 19, step=3)
     # args['l_weight'] = trial.suggest_categorical("net_depth", ['net_small', 'net_med', 'net_large'])
     # args['l_weight'] = trial.suggest_categorical("net_depth", ['net_small', 'net_med', 'net_large'])
  
-    args['reward_dificulty'] = 0.04
+    args['terrain_difficulty'] = 0.04
+    args['target_distance'] = 2.5
+ 
+
+    args['lr'] = 0.0005
+    args['lr_decay'] = 1e-7
+    args['entropy_coef'] = 0.0000026752
+    args['batch_size'] = 500.00 
+    args['roll_length'] = 20000
+    args['num_epochs'] = 5
+
+
     args = namedtuple("ObjectName", args.keys())(*args.values())
 
  
@@ -90,7 +103,10 @@ def main(trial):
             max_time_limit=60,  # secs, in realtime
 
             autoencoder_filename="lidar_28x28_0.8m_clipped.pth",
-            kernel_dir = "walking_cmd/checkpoint_best.pt"
+            kernel_dir = "walking_cmd/checkpoint_best.pt",
+            reward_params = args,
+            terrain_difficulty = args.terrain_difficulty,
+            target_distance = args.target_distance
         )
 
   
@@ -98,18 +114,18 @@ def main(trial):
                         net_arch=[256,256,256,dict(pi=[128], vf=[64])])
 
 
-    num_cpu = 3
+    num_cpu = 5
 
     env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
     # env = gym.make("gym_A1:A1_all_terrains-v2", **env_config)
     # env = Monitor(env)
     
 
-    eval_callback = EvalCallback(env, best_model_save_path=f'./results/model/trial_{trial._trial_id}/',
+    eval_callback = EvalCallback(env, best_model_save_path=f'./results/model_rewards/trial_{trial._trial_id}/',
                                 log_path='./results/logs/', eval_freq=5e5/num_cpu, # eg every 100,000 per cpu
                                 deterministic=True, render=False, n_eval_episodes = 5)
 
-    output = {'reward':0}                       
+    output = {'mean_target_count':0}                       
     callback = CallbackList([eval_callback, TensorboardCallback(trial, args, output, num_procs=num_cpu)])
 
     lr_sched = LRScheduler(1e-8, args.lr, args.lr_decay)
@@ -119,7 +135,7 @@ def main(trial):
                 env, 
                 policy_kwargs=policy_kwargs, 
                 verbose=1, 
-                tensorboard_log="./results/hyper_param_opt2/", 
+                tensorboard_log="./results/reward_search/", 
                 learning_rate=lr_sched.schedule(), 
                 batch_size=int(args.batch_size), 
                 n_steps =int(args.roll_length/num_cpu), 
@@ -149,7 +165,7 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
     """
     def _init() -> gym.Env:
         
-        env = gym.make("gym_A1:A1_all_terrains-v2", **env_config)
+        env = gym.make("gym_A1:A1_all_terrains-v24", **env_config)
         env = Monitor(env)
         env.seed(seed + rank)
         return env
@@ -159,11 +175,11 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
 
 if __name__ == '__main__':
 
-    storage = "sqlite:///reward_opt.db"
-    study = optuna.create_study(storage=storage, directions=["maximize"])
+    storage = "sqlite:///reward_search.db"
+    study = optuna.load_study(study_name="reward-search", storage=storage)
 
-    with parallel_backend('multiprocessing'):  # Overrides `prefer="threads"` to use multi-processing.
-        study.optimize(main, n_trials=100, n_jobs=3)
+    
+    study.optimize(main, n_trials=100, gc_after_trial=True)
 
 
     study.best_params 

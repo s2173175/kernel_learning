@@ -5,3 +5,9 @@ register(
     id='A1_all_terrains-v2',
     entry_point='gym_A1.envs:A1_env_v2_3',
 )
+
+
+register(
+    id='A1_all_terrains-v24',
+    entry_point='gym_A1.envs:A1_env_v2_4',
+)
