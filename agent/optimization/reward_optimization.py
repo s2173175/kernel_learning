@@ -49,6 +49,8 @@ from callbacks.sb3_callbacks import TensorboardCallback
 from utils.lr_scheduler import LRScheduler
 
 
+
+
 def main(trial):
 
     args = {}
@@ -95,7 +97,7 @@ def main(trial):
             # visionEnabled=False,
             rayLength=0.8,
             vision_dim=(28, 28),
-            enable_rendering=0,  # 0: disabled, 1: render, 2: target + direction
+            enable_rendering=1,  # 0: disabled, 1: render, 2: target + direction
             enable_recording=0,  # 0: disabled, 1: built-in render, 2: moviepy
             enable_rays=0,  # 0: disabled, 1: balls, 2: balls + rays
 
@@ -116,9 +118,9 @@ def main(trial):
 
     num_cpu = 5
 
-    env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
-    # env = gym.make("gym_A1:A1_all_terrains-v2", **env_config)
-    # env = Monitor(env)
+    # env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
+    env = gym.make("gym_A1:A1_all_terrains-v24", **env_config)
+    env = Monitor(env)
     
 
     eval_callback = EvalCallback(env, best_model_save_path=f'./results/model_rewards/trial_{trial._trial_id}/',
@@ -145,7 +147,7 @@ def main(trial):
 
     model.learn(total_timesteps=3e6, tb_log_name=f'{trial._trial_id}_id', callback=callback)
 
-
+    print(output['mean_target_count'])
     return output['mean_target_count'] #target_count and rollout reward
 
     #TODO save each policy under a different name

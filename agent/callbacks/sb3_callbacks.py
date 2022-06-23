@@ -136,7 +136,7 @@ class TensorboardCallback(BaseCallback):
 
 class TimeCallback(BaseCallback):
     """
-    A custom callback that derives from ``BaseCallback``.
+    A custom callback that derives from ``BaseCallback``.ls
 
     :param verbose: (int) Verbosity level 0: not output 1: info 2: debug
     """

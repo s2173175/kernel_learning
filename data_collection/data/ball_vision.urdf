@@ -1,0 +1,29 @@
+<robot name="ball">
+  <material name="green">
+    <color rgba="0.0 1.0 0.4 1.0"/>
+  </material>
+
+<link name="ball">
+
+<inertial>
+<mass value="0.4" />
+<inertia  ixx=".0016" ixy="0.0"  ixz="0.0"  iyy="0.0016"  iyz="0.0"  izz=".0016" />
+</inertial>
+
+<visual>
+<origin xyz="0 0 0"/>
+<geometry>
+<sphere radius="0.075" />
+</geometry>
+      <material name="green"/>
+</visual>
+<!--
+<collision>
+<origin xyz="0 0 0"/>
+<geometry>
+<sphere radius="0.05" />
+</geometry>
+</collision>
+-->
+</link>
+</robot>
