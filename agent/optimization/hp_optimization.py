@@ -48,18 +48,21 @@ from utils.lr_scheduler import LRScheduler
 
 
 def main(trial):
-        # parser.add_argument("--lr", type=float, help="The starting learning rate")
-    # parser.add_argument("--lr_decay", type=float, help="The learning rate decay (exponetial decay)")
-    # parser.add_argument("--batch_size", type=int, help="Batch size for updating the network")
-    # parser.add_argument("--roll_length", type=int, help="Timesteps to gather before updating the network")
-    # parser.add_argument("--num_epochs", type=int, help="Num of iterations of the data for updating the network")
-    # parser.add_argument("--entropy_coef", type=int, help="entropy coefient")
-    # parser.add_argument("--network_depth", type=int, help="entropy coefient")
-    # parser.add_argument("--network_width", type=int, help="entropy coefient")
+
+    parser = argparse.ArgumentParser()  
+    parser.add_argument('--log_dir', type=str)
+    parser.add_argument('--save_dir', type=str)
+
+    log_args = parser.parse_args()
 
 
 
-    args = {}
+    args = {'angular': 7.6688, 'distance': 3.6034, 'gravity': 3.7649, 'linear': 19.7336}
+
+    args['terrain_difficulty'] = 0.03
+    args['target_distance'] = 2.5
+
+
     args['lr'] = trial.suggest_categorical("lr", [1e-3, 3e-3, 5e-4])
     args['lr_decay'] = trial.suggest_categorical("lr_decay",  [1e-7])
     args['entropy_coef'] = trial.suggest_float("entropy_coef",  1e-6, 1e-3, log=True)
@@ -87,7 +90,7 @@ def main(trial):
             action_upper_bound= .05,
             action_lower_bound=-.05,
             alpha=0.1,  #0.1 init (0, 1] - 1=no lpf, alpha->0 old action
-            # visionEnabled=False,
+            visionEnabled=False,
             rayLength=0.8,
             vision_dim=(28, 28),
             enable_rendering=0,  # 0: disabled, 1: render, 2: target + direction
@@ -98,7 +101,10 @@ def main(trial):
             max_time_limit=60,  # secs, in realtime
 
             autoencoder_filename="lidar_28x28_0.8m_clipped.pth",
-            kernel_dir = "walking_cmd/checkpoint_best.pt"
+            kernel_dir = "walking_cmd/checkpoint_best.pt",
+            reward_params = args,
+            terrain_difficulty = args.terrain_difficulty,
+            target_distance = args.target_distance
         )
 
   
@@ -106,14 +112,14 @@ def main(trial):
                         net_arch=[256,256,256,dict(pi=[128], vf=[64])])
 
 
-    num_cpu = 3
+    num_cpu = 5
 
     env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
     # env = gym.make("gym_A1:A1_all_terrains-v2", **env_config)
     # env = Monitor(env)
     
 
-    eval_callback = EvalCallback(env, best_model_save_path=f'./results/model/trial_{trial._trial_id}/',
+    eval_callback = EvalCallback(env, best_model_save_path=f'./results/{log_args.save_dir}/trial_{trial._trial_id}/',
                                 log_path='./results/logs/', eval_freq=5e5/num_cpu, # eg every 100,000 per cpu
                                 deterministic=True, render=False, n_eval_episodes = 5)
 
@@ -127,7 +133,7 @@ def main(trial):
                 env, 
                 policy_kwargs=policy_kwargs, 
                 verbose=1, 
-                tensorboard_log="./results/hyper_param_opt2/", 
+                tensorboard_log=f"./results/{log_args.log_dir}/", 
                 learning_rate=lr_sched.schedule(), 
                 batch_size=int(args.batch_size), 
                 n_steps =int(args.roll_length/num_cpu), 
@@ -157,7 +163,7 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
     """
     def _init() -> gym.Env:
         
-        env = gym.make("gym_A1:A1_all_terrains-v2", **env_config)
+        env = gym.make("gym_A1:A1_all_terrains-v24", **env_config)
         env = Monitor(env)
         env.seed(seed + rank)
         return env
@@ -167,12 +173,12 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
 
 if __name__ == '__main__':
 
-    storage = "sqlite:///hp_opt_small.db"
-    study = optuna.create_study(storage=storage, directions=["maximize"])
+    storage = "sqlite:///search.db"
 
-    with parallel_backend('multiprocessing'):  # Overrides `prefer="threads"` to use multi-processing.
-        study.optimize(main, n_trials=30, n_jobs=3)
+    try:
+        study = optuna.create_study(study_name="hp-search-long", storage=storage, sampler=optuna.samplers.RandomSampler(), directions=['maximize'])
+    except:
+        study = optuna.load_study(study_name="hp-search-long", storage=storage, sampler=optuna.samplers.RandomSampler())
 
-
-    study.best_params 
-
+    study.optimize(main, n_trials=100, gc_after_trial=True)
+ 

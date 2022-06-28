@@ -20,6 +20,7 @@ import torch
 import os
 import inspect
 from urllib import robotparser
+import argparse
 
 
 
@@ -53,16 +54,18 @@ from utils.lr_scheduler import LRScheduler
 
 def main(trial):
 
+    parser = argparse.ArgumentParser()  
+    parser.add_argument('--log_dir', type=str)
+    parser.add_argument('--save_dir', type=str)
+
+    log_args = parser.parse_args()
+
     args = {}
     args['gravity'] = trial.suggest_float("gravity", 1,4)
     args['distance'] = trial.suggest_float("distance", 1,4)
     args['linear'] = trial.suggest_float("linear",  15, 20)
     args['angular'] = trial.suggest_float("angular", 5,10)
-    # args['g_weight'] = trial.suggest_int("rollouts", 5000, 20000, step=5000)
-    # args['d_weight'] = trial.suggest_int("num_epochs", 1, 19, step=3)
-    # args['l_weight'] = trial.suggest_categorical("net_depth", ['net_small', 'net_med', 'net_large'])
-    # args['l_weight'] = trial.suggest_categorical("net_depth", ['net_small', 'net_med', 'net_large'])
- 
+
     args['terrain_difficulty'] = 0.04
     args['target_distance'] = 2.5
  
@@ -94,10 +97,10 @@ def main(trial):
             action_upper_bound= .05,
             action_lower_bound=-.05,
             alpha=0.1,  #0.1 init (0, 1] - 1=no lpf, alpha->0 old action
-            # visionEnabled=False,
+            visionEnabled=False,
             rayLength=0.8,
             vision_dim=(28, 28),
-            enable_rendering=1,  # 0: disabled, 1: render, 2: target + direction
+            enable_rendering=0,  # 0: disabled, 1: render, 2: target + direction
             enable_recording=0,  # 0: disabled, 1: built-in render, 2: moviepy
             enable_rays=0,  # 0: disabled, 1: balls, 2: balls + rays
 
@@ -118,12 +121,12 @@ def main(trial):
 
     num_cpu = 5
 
-    # env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
-    env = gym.make("gym_A1:A1_all_terrains-v24", **env_config)
-    env = Monitor(env)
+    env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])
+    # env = gym.make("gym_A1:A1_all_terrains-v24", **env_config)
+    # env = Monitor(env)
     
 
-    eval_callback = EvalCallback(env, best_model_save_path=f'./results/model_rewards/trial_{trial._trial_id}/',
+    eval_callback = EvalCallback(env, best_model_save_path=f'./results/{log_args.save_dir}/trial_{trial._trial_id}/',
                                 log_path='./results/logs/', eval_freq=5e5/num_cpu, # eg every 100,000 per cpu
                                 deterministic=True, render=False, n_eval_episodes = 5)
 
@@ -137,7 +140,7 @@ def main(trial):
                 env, 
                 policy_kwargs=policy_kwargs, 
                 verbose=1, 
-                tensorboard_log="./results/reward_search/", 
+                tensorboard_log=f"./results/{log_args.log_dir}/", 
                 learning_rate=lr_sched.schedule(), 
                 batch_size=int(args.batch_size), 
                 n_steps =int(args.roll_length/num_cpu), 
@@ -176,13 +179,13 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
 
 
 if __name__ == '__main__':
+    storage = "sqlite:///search.db"
 
-    storage = "sqlite:///reward_search.db"
-    study = optuna.load_study(study_name="reward-search", storage=storage)
+    try:
+        study = optuna.create_study(study_name="reward-search-long", storage=storage, sampler=optuna.samplers.RandomSampler(), directions=['maximize'])
+    except:
+        study = optuna.load_study(study_name="reward-search-long", storage=storage, sampler=optuna.samplers.RandomSampler())
 
-    
     study.optimize(main, n_trials=100, gc_after_trial=True)
-
-
-    study.best_params 
+  
 

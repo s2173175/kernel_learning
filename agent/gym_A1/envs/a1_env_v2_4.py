@@ -97,7 +97,7 @@ class A1_env_v1(gym.Env):
                  action_lower_bound=-0.05,  # cm
                  alpha=0.02, 
 
-                 visionEnabled=True,
+                 visionEnabled=False,
                  rayLength=0.8,
                  vision_dim=(28, 28),
                  FoV_V_Max=np.deg2rad(120),
@@ -475,8 +475,8 @@ class A1_env_v1(gym.Env):
 
         self._robot.ReceiveObservation()
         
-        # if record_video:
-        # self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
+        if self.rendering_enabled:
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
         self._env_step_counter += 1
         
         self.check_target_reached()
@@ -593,6 +593,7 @@ class A1_env_v1(gym.Env):
         return False
 
     def check_contact_danger(self):
+
         warning_contact_links = self._robot._motor_link_ids
         ground = self.get_ground()
 
@@ -1167,7 +1168,7 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
             # visionEnabled=False,
             rayLength=0.8,
             vision_dim=(28, 28),
-            enable_rendering=0,  # 0: disabled, 1: render, 2: target + direction
+            enable_rendering=1,  # 0: disabled, 1: render, 2: target + direction
             enable_recording=0,  # 0: disabled, 1: built-in render, 2: moviepy
             enable_rays=0,  # 0: disabled, 1: balls, 2: balls + rays
 
@@ -1185,7 +1186,9 @@ def _run_example(max_time=_MAX_TIME_SECONDS):
     env = A1_env_v1(**env_config)  
     start = time.time()
     for i in range(1000):
-        env.step(np.array([0,0,0,0,0,0,0,0,0,0,0,0]))
+        _, _, done, _ = env.step(np.array([0,0,0,0,0,0,0,0,0,0,0,0]))
+        if done:
+            input()
         
     print(time.time()-start)
 

@@ -342,8 +342,8 @@ class DenseNN(nn.Module):
 
     def load_model(self):
         ### temporary 
-        currentdir = '/afs/inf.ed.ac.uk/user/s21/s2173175/Desktop/diss_ws/kernel_learning/kernel'
-        file = currentdir+f"/results/{self.config['model_file']}"
+        # currentdir = '/afs/inf.ed.ac.uk/user/s21/s2173175/Desktop/diss_ws/kernel_learning/kernel'
+        file = currentdir+f"/../results/{self.config['model_file']}"
         state_dict = torch.load(file, map_location=lambda s, l: default_restore_location(s, 'cpu'))
         self.load_state_dict(state_dict['model'])
         return 

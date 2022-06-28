@@ -95,7 +95,7 @@ class A1_env_v1(gym.Env):
                  action_lower_bound=-0.05,  # cm
                  alpha=0.02, 
 
-                 visionEnabled=True,
+                 visionEnabled=False,
                  rayLength=0.8,
                  vision_dim=(28, 28),
                  FoV_V_Max=np.deg2rad(120),

@@ -217,8 +217,10 @@ def setup_env():
     p.setGravity(0, 0, -9.8)
     p.setPhysicsEngineParameter(enableConeFriction=0)
     p.setAdditionalSearchPath(pd.getDataPath())
+
     
     ground_id = p.loadURDF("plane.urdf")    
+    p.changeDynamics(ground_id, -1, lateralFriction=5.0)
   
 
     return p, ground_id
@@ -347,7 +349,7 @@ def _run_example(step_height, frequency, duty):
         lin_speed[0] = command[0]
         lin_speed[1] = command[1]
         lin_speed[2] = 0.0
-        lin_speed[3] = 0.3*theta
+        lin_speed[3] = theta
 
         if (current_time - t0 > 1 / freq):
             lin_speed_cmd[0] += max( min( lin_speed[0] - lin_speed_cmd[0], 0.005) , -0.005)
@@ -393,9 +395,9 @@ def _run_example(step_height, frequency, duty):
 
 if __name__ == '__main__':
 
-    step_height = 0.18
-    frequency = 0.2853248030338591
-    duty = 0.824996902442921
+    step_height = 0.20
+    frequency = 0.2135728
+    duty = 0.6406803
 
     _run_example(step_height, frequency, duty)
 

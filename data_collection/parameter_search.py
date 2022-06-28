@@ -258,30 +258,30 @@ def reward_function(p, robot, lin_speed_cmd, ang_speed_cmd):
     gravity_vec = get_gravity(p, robot)
     gravity_error = np.array([0, 0, -1]) - gravity_vec
     gravity_error = np.linalg.norm(gravity_error)  
-    gravity_reward = np.exp(-gravity_error**2*2.5)
+    gravity_reward = np.exp(-gravity_error**2)
 
     # angular reward = rotational
     desired_ang_vel  = np.array([ang_speed_cmd])
     ang_vel = robot.GetBaseRollPitchYawRate()[2]
-    ang_reward = np.exp(-np.linalg.norm(desired_ang_vel - ang_vel)**2*7.5)
+    ang_reward = np.exp(-np.linalg.norm(desired_ang_vel - ang_vel)**2*18)
 
     #linear reward = speed and direction
     desired_lin_com = np.array([lin_speed_cmd[0],lin_speed_cmd[1]])
     lin_vel = robot.GetBaseVelocity()[:2]
     linear_reward = np.exp(-np.linalg.norm(desired_lin_com - lin_vel)**2*18.5)
 
-    return gravity_reward + ang_reward + linear_reward
+    return gravity_reward+ ang_reward + linear_reward
 
 
 
 def _run_example(trial):
   """Runs the locomotion controller example."""
   step_height = 0.18
-  freq_range = (0.28, 0.32)
-  num_targets=5
+  freq_range = (0.1, 0.3)
+  num_targets = 5
 
   frequency = trial.suggest_float("frequency", freq_range[0], freq_range[1])
-  duty_factor = trial.suggest_float("duty_factor", 0.8, 0.86)
+  duty_factor = trial.suggest_float("duty_factor", 0.4, 0.85)
 
   print('Starting study -----------------')
   print(frequency)
@@ -392,15 +392,15 @@ def _run_example(trial):
 if __name__ == '__main__':
 
     storage = "sqlite:///demo_step_18_f_28_32.db"
-    # study = optuna.create_study(study_name='attemp6', storage=storage, directions=["maximize"])
+    # study = optuna.create_study(study_name='step_018_only', storage=storage, directions=["maximize"])
 
-    study = optuna.load_study(study_name='attemp6', storage=storage)
-    study.optimize(_run_example, n_trials=100, gc_after_trial=True, show_progress_bar=True )
+    study = optuna.load_study(study_name='step_018_only', storage=storage)
+    study.optimize(_run_example, n_trials=250, gc_after_trial=True, show_progress_bar=True )
 
-    study.best_params
+    # study.best_params
 
-    fig = optuna.visualization.plot_contour(study, params=["frequency", "duty_factor"])
-    fig.show()
+    # fig = optuna.visualization.plot_contour(study, params=["frequency", "duty_factor"])
+    # fig.show()
 
  
 

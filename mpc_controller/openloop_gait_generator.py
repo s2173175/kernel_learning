@@ -163,6 +163,8 @@ class OpenloopGaitGenerator(gait_generator.GaitGenerator):
           leg_id] * full_cycle_period
       phase_in_full_cycle = math.fmod(augmented_time,
                                       full_cycle_period) / full_cycle_period
+
+
       ratio = self._initial_state_ratio_in_cycle[leg_id]
       if phase_in_full_cycle < ratio:
         self._desired_leg_state[leg_id] = self._initial_leg_state[leg_id]

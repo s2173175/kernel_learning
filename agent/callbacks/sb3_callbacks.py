@@ -1,3 +1,4 @@
+import argparse
 from stable_baselines3.common.callbacks import BaseCallback
 
 # check list
@@ -52,7 +53,10 @@ class TensorboardCallback(BaseCallback):
         self.tb_formatter = next(formatter for formatter in output_formats if isinstance(formatter, TensorBoardOutputFormat))
       
         with self.tb_formatter.writer as w:
-            w.add_hparams(dict(self.opt_args._asdict()),{'loss':11}, run_name='.')
+            if isinstance(self.opt_args, argparse.Namespace):
+                w.add_hparams(vars(self.opt_args),{'loss':11}, run_name='.')
+            else:
+                w.add_hparams(dict(self.opt_args._asdict()),{'loss':11}, run_name='.')
             w.flush()
 
         pass
@@ -63,8 +67,12 @@ class TensorboardCallback(BaseCallback):
         """
         if len(self.episode_rewards)>30:
             self.episode_rewards = self.episode_rewards[-30:]
+
+        if len(self.target_counts)>30:
+            self.target_counts = self.target_counts[-30:]
         
         self.output['mean_target_count'] = sum(self.target_counts)/len(self.target_counts)
+        self.output['reward'] = sum(self.episode_rewards)/len(self.episode_rewards)
         pass
 
     def calc_reward_dist(self, dist):
@@ -113,11 +121,8 @@ class TensorboardCallback(BaseCallback):
             self.logger.record('rollout/target_count', sum(self.target_counts)/length)
             self.logger.record('rollout/mean_reward', sum(self.episode_rewards)/length)
 
-            self.trial.report(sum(self.target_counts)/length, self.num_timesteps)
-
-            # Handle pruning based on the intermediate value.
-            # if self.trial.should_prune():
-            #     raise optuna.exceptions.TrialPruned()
+            if self.trial is not None:
+                self.trial.report(sum(self.target_counts)/length, self.num_timesteps)
 
         else:
             self.logger.record('rollout/success_rate', 0)

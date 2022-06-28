@@ -10,3 +10,8 @@ register(
     id='A1_all_terrains-v24',
     entry_point='gym_A1.envs:A1_env_v2_4',
 )
+
+register(
+    id='A1_multi_task_training-v1',
+    entry_point='gym_A1.envs:A1_multi_task_training_v1',
+)

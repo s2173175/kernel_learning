@@ -39,7 +39,26 @@ FLAGS = flags.FLAGS
 _NUM_SIMULATION_ITERATION_STEPS = 300
 
 
+######################### Trotting
 
+# _STANCE_DURATION_SECONDS = [
+#     0.3
+# ] * 4  # For faster trotting (v > 1.5 ms reduce this to 0.13s).
+
+
+# # Trotting
+# _DUTY_FACTOR = [0.8] * 4
+# _INIT_PHASE_FULL_CYCLE = [0, 0.5, 0.75, 0.25]
+# _MAX_TIME_SECONDS = 50
+
+# _STEP_HEIGHT = 0.18
+
+# _INIT_LEG_STATE = (
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.STANCE,
+#     gait_generator_lib.LegState.SWING,
+#     gait_generator_lib.LegState.STANCE,
+# )
 
 _STANCE_DURATION_SECONDS = [
     0.3
@@ -47,19 +66,18 @@ _STANCE_DURATION_SECONDS = [
 
 
 # Trotting
-_DUTY_FACTOR = [0.6] * 4
-_INIT_PHASE_FULL_CYCLE = [0.9, 0, 0, 0.9]
+_DUTY_FACTOR = [0.8] * 4
+_INIT_PHASE_FULL_CYCLE = [0., 0.3, 0.6, 0.]
 _MAX_TIME_SECONDS = 50
 
 _STEP_HEIGHT = 0.24
 
 _INIT_LEG_STATE = (
-    gait_generator_lib.LegState.SWING,
+    gait_generator_lib.LegState.STANCE,
     gait_generator_lib.LegState.STANCE,
     gait_generator_lib.LegState.STANCE,
     gait_generator_lib.LegState.SWING,
 )
-
 
 
 
@@ -82,12 +100,12 @@ def _generate_example_linear_angular_speed(t, lin, ang):
           t)
 
   step = 0.005
-  target_lin = np.array([1,0.5,0])
+  target_lin = np.array([0.1,0,0])
   norm = np.linalg.norm(target_lin)
 
   if norm > 0.5:
     target_lin = target_lin * 0.5/norm
-  target_ang = [1]
+  target_ang = [0.2]
 
   anf_new = deepcopy(ang)
   lin_new = list(deepcopy(lin))
@@ -102,7 +120,7 @@ def _generate_example_linear_angular_speed(t, lin, ang):
   if lin[1] < target_lin[1]:
       lin_new[1] = lin[1]+step
 
-  print(lin_new)
+  print(lin_new, anf_new)
 
   return np.array(lin_new), anf_new#speed[0:3], speed[3]
 
