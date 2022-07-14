@@ -834,18 +834,18 @@ class A1_env_v1(gym.Env):
         ang_cmd = 0.3*theta
 
         #this needs to update gradually
-        if (self._robot.GetTimeSinceReset() % 0.05 == 0): #freq = 20
-            self.lin_speed_cmd[0] += max( min( lin_cmd[0] - self.lin_speed_cmd[0], 0.005) , -0.005)
-            self.lin_speed_cmd[1] += max( min( lin_cmd[1] - self.lin_speed_cmd[1], 0.005) , -0.005)
-            self.ang_speed_cmd += max( min( ang_cmd - self.ang_speed_cmd, 0.005) , -0.005)
+        # if (self._robot.GetTimeSinceReset()): #freq = 20
+        self.lin_speed_cmd[0] += max( min( lin_cmd[0] - self.lin_speed_cmd[0], 0.005) , -0.005)
+        self.lin_speed_cmd[1] += max( min( lin_cmd[1] - self.lin_speed_cmd[1], 0.005) , -0.005)
+        self.ang_speed_cmd += max( min( ang_cmd - self.ang_speed_cmd, 0.005) , -0.005)
 
-            # limit overall maximum (only affects the command when the limit is actually exceeded)
-            manhatDist = abs(self.lin_speed_cmd[0]) + abs(self.lin_speed_cmd[1])
-            if manhatDist > 0.5:
-                factor = 1 #1 means maximum performance (<1 means safe parameters)
-                norm   = manhatDist / (0.5*factor)
-                self.lin_speed_cmd[0] /= norm
-                self.lin_speed_cmd[1] /= norm
+        # limit overall maximum (only affects the command when the limit is actually exceeded)
+        manhatDist = abs(self.lin_speed_cmd[0]) + abs(self.lin_speed_cmd[1])
+        if manhatDist > 0.5:
+            factor = 1 #1 means maximum performance (<1 means safe parameters)
+            norm   = manhatDist / (0.5*factor)
+            self.lin_speed_cmd[0] /= norm
+            self.lin_speed_cmd[1] /= norm
 
         self.lin_speed_cmd[0] = np.clip (self.lin_speed_cmd[0],-0.5,0.5)
         self.lin_speed_cmd[1] = np.clip (self.lin_speed_cmd[1],-0.2,0.2)

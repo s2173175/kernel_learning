@@ -57,25 +57,32 @@ def main(trial):
 
 
 
-    args = {'angular': 7.6688, 'distance': 3.6034, 'gravity': 3.7649, 'linear': 19.7336}
+    args = {'angular': 7.47, 'distance': 0.74, 'gravity': 2.35, 'linear': 18.42}
 
     args['terrain_difficulty'] = 0.03
     args['target_distance'] = 2.5
 
 
-    args['lr'] = trial.suggest_categorical("lr", [1e-3, 3e-3, 5e-4])
+    args['lr'] = trial.suggest_categorical("lr", [1e-3, 3e-3, 5e-4, 5e-5])
     args['lr_decay'] = trial.suggest_categorical("lr_decay",  [1e-7])
     args['entropy_coef'] = trial.suggest_float("entropy_coef",  1e-6, 1e-3, log=True)
     args['batch_size'] = trial.suggest_categorical("batch_size", [500,2000,4000])
     args['roll_length'] = trial.suggest_categorical("rollouts", [20000])
-    args['num_epochs'] = trial.suggest_categorical("num_epochs", [2,5,10])
+    args['num_epochs'] = trial.suggest_categorical("num_epochs", [5,10,20])
+    args['network'] = trial.suggest_categorical("network_size", [
+        'large','medium','small'
+    ])
  
 
     args = namedtuple("ObjectName", args.keys())(*args.values())
 
  
 
-
+    networks = {
+        'large':dict(activation_fn=torch.nn.Tanh, net_arch=[256,256,256,dict(pi=[128], vf=[64])]),
+        'medium':dict(activation_fn=torch.nn.Tanh, net_arch=[256,256,dict(pi=[128], vf=[64])]),
+        'small':dict(activation_fn=torch.nn.Tanh, net_arch=[128,128,dict(pi=[128], vf=[64])]),
+    }
 
     #### run experiments
 
@@ -108,8 +115,7 @@ def main(trial):
         )
 
   
-    policy_kwargs = dict(activation_fn=torch.nn.Tanh,
-                        net_arch=[256,256,256,dict(pi=[128], vf=[64])])
+    policy_kwargs = networks[args.network]
 
 
     num_cpu = 5
@@ -173,12 +179,12 @@ def make_env(env_config, rank: int, seed: int = 0) -> Callable:
 
 if __name__ == '__main__':
 
-    storage = "sqlite:///search.db"
+    storage = "sqlite:///search-final.db"
 
     try:
-        study = optuna.create_study(study_name="hp-search-long", storage=storage, sampler=optuna.samplers.RandomSampler(), directions=['maximize'])
+        study = optuna.create_study(study_name="hp-search-long-final", storage=storage, sampler=optuna.samplers.RandomSampler(), directions=['maximize'])
     except:
-        study = optuna.load_study(study_name="hp-search-long", storage=storage, sampler=optuna.samplers.RandomSampler())
+        study = optuna.load_study(study_name="hp-search-long-final", storage=storage, sampler=optuna.samplers.RandomSampler())
 
-    study.optimize(main, n_trials=100, gc_after_trial=True)
+    study.optimize(main, n_trials=50, gc_after_trial=True)
  

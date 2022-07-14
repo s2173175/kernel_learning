@@ -58,7 +58,7 @@ def get_label(reward_params):
 
 def main(args, env_config):
 
-    label = get_label(args)
+    
 
     env_config = dict(
             usePhaseObs = args.use_phase,
@@ -71,7 +71,7 @@ def main(args, env_config):
             alpha=0.1,  #0.1 init (0, 1] - 1=no lpf, alpha->0 old action
             rayLength=0.8,
             vision_dim=(28, 28),
-            enable_rendering=0,  # 0: disabled, 1: render, 2: target + direction
+            enable_rendering=1,  # 0: disabled, 1: render, 2: target + direction ------------------------------------- change back after testing
             enable_recording=0,  # 0: disabled, 1: built-in render, 2: moviepy
             enable_rays=0,  # 0: disabled, 1: balls, 2: balls + rays
 
@@ -87,19 +87,21 @@ def main(args, env_config):
             force_frequency = env_config.force_frequency,
             target_distance = env_config.target_distance,
             terrain_probability = env_config.terrain_probability,
+            terrain_type = env_config.terrain_type,
             terrain_uniform_range = env_config.terrain_uniform_range,
             perlin_params = env_config.perlin_params,
 
         )
 
   
-    num_cpu = 5
+    num_cpu = 1 # this should be 5 ---------------------------------------------------- change after testing
     output = {'mean_target_count':0}                       
     policy_kwargs = dict(activation_fn=torch.nn.Tanh,
                         net_arch=[256,256,256,dict(pi=[128], vf=[64])])
 
 
     if args.train:
+        label = get_label(args)
         env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])   
 
         eval_callback = EvalCallback(env, best_model_save_path=f'./results/{args.save_dir}/{label}/',
@@ -128,13 +130,15 @@ def main(args, env_config):
     elif args.eval:
          
         if args.model == 'rl':
-            model = PPO.load(f'./results/results/{args.model_dir}/best_model.zip', 
+            lr_sched = LRScheduler(1e-8, 0., 0.)
+            model = PPO.load(f'./results/{args.save_dir}/best_model', 
                         custom_objects={'learning_rate':lr_sched.schedule(), 
                         'lr_schedule':lr_sched})
 
             env = SubprocVecEnv([make_env(env_config, i) for i in range(num_cpu)])   
             mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=20, deterministic=True)
-        pass
+        else:
+            pass
 
     print(output['mean_target_count'])
     return output['mean_target_count']
